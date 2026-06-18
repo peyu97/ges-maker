@@ -91,12 +91,17 @@
             <label>Nº de Ayudas Técnicas a solicitar:</label>
             <input type="number" id="in_cantidad" value="1" min="1" max="10" onchange="generarEstructura()">
         </div>
+        <div class="form-group">
+            <label>Fecha del formulario:</label>
+            <input type="date" id="in_fecha_formulario" onchange="renderAll()">
+        </div>
 
         <h2>Herramientas Manuales</h2>
         <div class="toolbar">
             <button class="tool-btn active" id="btn_debug" onclick="setTool('debug')">📍 Coordenadas</button>
             <button class="tool-btn" id="btn_x" onclick="setTool('x')">❌ Poner 'X'</button>
             <button class="tool-btn" id="btn_texto" onclick="setTool('texto')">📝 Texto Libre</button>
+            <button class="tool-btn" id="btn_moverTexto" onclick="setTool('moverTexto')">↔️ Mover texto</button>
             <button class="tool-btn" id="btn_goma" onclick="setTool('goma')">🧹 Borrar</button>
         </div>
 
@@ -104,7 +109,7 @@
 
         <div class="app-footer">
             hecho con <span style="color: #e74c3c; font-size: 0.9rem;">❤️</span> por pedro errazuriz<br>
-            @mediayuda_ / version 2.0 / febrero 2025
+            @mediayuda_ / version 2.1 / febrero 2026 - Junio 2026 🐔
         </div>
     </div>
 
@@ -121,6 +126,7 @@
         // --- ESTADO DE LA APLICACIÓN ---
         let toolActiva = 'debug'; 
         let elementosPersonalizados = {}; 
+        let arrastreTexto = null;
         
         const imagenes = { ges: new Image(), ipd: new Image(), orden: new Image() };
         let imagenesCargadas = 0;
@@ -167,12 +173,45 @@
         }
         imagenes.ges.onload = checkLoad; imagenes.ipd.onload = checkLoad; imagenes.orden.onload = checkLoad;
 
+        function obtenerFechaHoyISO() {
+            const hoy = new Date();
+            const dia = String(hoy.getDate()).padStart(2, '0');
+            const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+            const anio = String(hoy.getFullYear());
+            return `${anio}-${mes}-${dia}`;
+        }
+
+        function obtenerFechaFormularioDesdeISO(valorISO) {
+            const [anio, mes, dia] = valorISO.split('-');
+            return {
+                dia,
+                mes,
+                anio,
+                anioCorto: anio.slice(-2),
+                completa: `${dia}/${mes}/${anio}`
+            };
+        }
+
+        function obtenerFechaFormulario() {
+            const inputFecha = document.getElementById('in_fecha_formulario');
+            const valorFecha = inputFecha && inputFecha.value ? inputFecha.value : obtenerFechaHoyISO();
+
+            if (valorFecha.split('-').length !== 3) {
+                return obtenerFechaFormularioDesdeISO(obtenerFechaHoyISO());
+            }
+
+            return obtenerFechaFormularioDesdeISO(valorFecha);
+        }
+
+        document.getElementById('in_fecha_formulario').value = obtenerFechaHoyISO();
+
         function setTool(tool) {
             toolActiva = tool;
+            arrastreTexto = null;
             document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
             document.getElementById('btn_' + tool).classList.add('active');
             
-            const cursores = { 'debug': 'crosshair', 'x': 'cell', 'texto': 'text', 'goma': 'not-allowed' };
+            const cursores = { 'debug': 'crosshair', 'x': 'cell', 'texto': 'text', 'moverTexto': 'move', 'goma': 'not-allowed' };
             document.querySelectorAll('canvas').forEach(c => c.style.cursor = cursores[tool]);
         }
 
@@ -206,6 +245,8 @@
 
             canvas.addEventListener('mousemove', manejarMouseMove);
             canvas.addEventListener('mousedown', manejarClick);
+            canvas.addEventListener('mouseup', finalizarArrastreTexto);
+            canvas.addEventListener('mouseleave', finalizarArrastreTexto);
 
             wrapper.appendChild(label);
             wrapper.appendChild(canvas);
@@ -217,12 +258,7 @@
         // --- MOTOR DE DIBUJO ---
         function renderAll() {
             const canvases = document.querySelectorAll('canvas');
-            
-            const hoy = new Date();
-            const dia = String(hoy.getDate()).padStart(2, '0');
-            const mes = String(hoy.getMonth() + 1).padStart(2, '0');
-            const anio = String(hoy.getFullYear());
-            const anioCorto = anio.slice(-2); 
+            const fechaFormulario = obtenerFechaFormulario();
 
             const datosADibujar = {
                 nombres: document.getElementById('in_nombres').value,
@@ -244,11 +280,11 @@
                 direccion_hosp: constantes.direccion_hosp,
                 ciudad_hosp: constantes.ciudad_hosp,
                 
-                fecha_dia: dia,
-                fecha_mes: mes,
-                fecha_anio: anio,
-                fecha_anio_corto: anioCorto,
-                fecha_completa: `${dia}/${mes}/${anio}`
+                fecha_dia: fechaFormulario.dia,
+                fecha_mes: fechaFormulario.mes,
+                fecha_anio: fechaFormulario.anio,
+                fecha_anio_corto: fechaFormulario.anioCorto,
+                fecha_completa: fechaFormulario.completa
             };
 
             canvases.forEach(canvas => {
@@ -278,7 +314,7 @@
                         ctx.font = "bold 35px Arial";
                         ctx.fillText("X", el.x - 10, el.y + 10); 
                     } else if (el.tipo === 'texto') {
-                        ctx.font = "bold 24px Arial";
+                        ctx.font = "24px Arial";
                         ctx.fillText(el.text, el.x, el.y);
                     }
                 });
@@ -299,6 +335,35 @@
         function manejarMouseMove(e) {
             const coords = obtenerCoordsEscaladas(e.target, e);
             document.getElementById('coordDisplay').innerText = `X: ${coords.x}, Y: ${coords.y}`;
+
+            if (toolActiva === 'moverTexto' && arrastreTexto && arrastreTexto.id === e.target.id) {
+                arrastreTexto.elemento.x = coords.x - arrastreTexto.offsetX;
+                arrastreTexto.elemento.y = coords.y - arrastreTexto.offsetY;
+                renderAll();
+            }
+        }
+
+        function buscarTextoCercano(idCanvas, coords) {
+            const elems = elementosPersonalizados[idCanvas] || [];
+            let textoCercano = null;
+            let minDist = 55;
+
+            for(let i = elems.length - 1; i >= 0; i--) {
+                const el = elems[i];
+                if(el.tipo !== 'texto') continue;
+
+                const dist = Math.sqrt(Math.pow(el.x - coords.x, 2) + Math.pow(el.y - coords.y, 2));
+                if(dist < minDist) {
+                    minDist = dist;
+                    textoCercano = el;
+                }
+            }
+
+            return textoCercano;
+        }
+
+        function finalizarArrastreTexto() {
+            arrastreTexto = null;
         }
 
         function manejarClick(e) {
@@ -320,6 +385,17 @@
                     renderAll();
                 }
             } 
+            else if (toolActiva === 'moverTexto') {
+                const texto = buscarTextoCercano(id, coords);
+                if (texto) {
+                    arrastreTexto = {
+                        id,
+                        elemento: texto,
+                        offsetX: coords.x - texto.x,
+                        offsetY: coords.y - texto.y
+                    };
+                }
+            }
             else if (toolActiva === 'goma') {
                 const elems = elementosPersonalizados[id];
                 let indexABorrar = -1;
